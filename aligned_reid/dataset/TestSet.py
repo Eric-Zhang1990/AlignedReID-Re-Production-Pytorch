@@ -57,6 +57,7 @@ class TestSet(Dataset):
     im_name = self.im_names[ptr]
     im_path = osp.join(self.im_dir, im_name)
     im = np.asarray(Image.open(im_path))
+
     im, _ = self.pre_process_im(im)
     id = parse_im_name(self.im_names[ptr], 'id')
     cam = parse_im_name(self.im_names[ptr], 'cam')

@@ -72,7 +72,7 @@ def transfer_optim_state(state, device_id=-1):
         if device_id == -1:
           state[key] = val.cpu()
         else:
-          state[key] = val.cuda(device=device_id)
+          state[key] = val.cuda(device_id=device_id)
       except:
         pass
 
@@ -224,7 +224,7 @@ def set_devices_for_ml(sys_device_ids):
   return TVTs, TMOs, relative_device_ids
 
 
-def load_ckpt(modules_optims, ckpt_file, load_to_cpu=True, verbose=True):
+def load_ckpt(modules_optims, ckpt_file, load_to_cpu=False, verbose=True):
   """Load state_dict's of modules/optimizers from file.
   Args:
     modules_optims: A list, which members are either torch.nn.optimizer 
@@ -257,11 +257,14 @@ def save_ckpt(modules_optims, ep, scores, ckpt_file):
     cpu or your desired gpu, if you change devices.
   """
   state_dicts = [m.state_dict() for m in modules_optims]
-  ckpt = dict(state_dicts=state_dicts,
-              ep=ep,
-              scores=scores)
+  # ckpt = dict(state_dicts=state_dicts,
+  #             ep=ep,
+  #             scores=scores)
   may_make_dir(osp.dirname(osp.abspath(ckpt_file)))
-  torch.save(ckpt, ckpt_file)
+  # torch.save(ckpt, ckpt_file)
+  torch.save({'state_dicts': state_dicts,
+              'ep': ep,
+              'scores': scores}, ckpt_file)
 
 
 def load_state_dict(model, src_state_dict):
@@ -289,8 +292,7 @@ def load_state_dict(model, src_state_dict):
     try:
       dest_state_dict[name].copy_(param)
     except Exception, msg:
-      print("Warning: Error occurs when copying '{}': {}"
-            .format(name, str(msg)))
+      print("Warning: Error occurs when copying '{}': {}".format(name, str(msg)))
 
   src_missing = set(dest_state_dict.keys()) - set(src_state_dict.keys())
   if len(src_missing) > 0:
@@ -531,6 +533,15 @@ def find_index(seq, item):
   return -1
 
 
+def update_learning_rate(optimizer, cur_lr, new_lr):
+  """Update learning rate"""
+  if cur_lr != new_lr:
+    # Update learning rate, note that different parameter may have different learning rate
+    param_keys = []
+    for ind, param_group in enumerate(optimizer.param_groups):
+      param_group['lr'] = new_lr
+      param_keys += param_group['params']
+
 def adjust_lr_exp(optimizer, base_lr, ep, total_ep, start_decay_at_ep):
   """Decay exponentially in the later phase of training. All parameters in the 
   optimizer share the same learning rate.
@@ -554,13 +565,15 @@ def adjust_lr_exp(optimizer, base_lr, ep, total_ep, start_decay_at_ep):
   """
   assert ep >= 1, "Current epoch number should be >= 1"
 
-  if ep < start_decay_at_ep:
+  if ep <= start_decay_at_ep:
+    cur_lr = optimizer.param_groups[0]['lr']
+    print('=====> exp current lr is: {:.10f}'.format(cur_lr))
     return
 
   for g in optimizer.param_groups:
     g['lr'] = (base_lr * (0.001 ** (float(ep + 1 - start_decay_at_ep)
                                     / (total_ep + 1 - start_decay_at_ep))))
-  print('=====> lr adjusted to {:.10f}'.format(g['lr']).rstrip('0'))
+  print('=====> exp: lr adjusted to {:.10f}'.format(g['lr']).rstrip('0'))
 
 
 def adjust_lr_staircase(optimizer, base_lr, ep, decay_at_epochs, factor):
@@ -590,12 +603,77 @@ def adjust_lr_staircase(optimizer, base_lr, ep, decay_at_epochs, factor):
   assert ep >= 1, "Current epoch number should be >= 1"
 
   if ep not in decay_at_epochs:
+    cur_lr = optimizer.param_groups[0]['lr']
+    print('=====> staircase current lr is: {:.10f}'.format(cur_lr))
     return
 
   ind = find_index(decay_at_epochs, ep)
   for g in optimizer.param_groups:
     g['lr'] = base_lr * factor ** (ind + 1)
-  print('=====> lr adjusted to {:.10f}'.format(g['lr']).rstrip('0'))
+  print('=====> staircase: lr adjusted to {:.10f}'.format(g['lr']).rstrip('0'))
+
+def adjust_lr_warm_up(optimizer, base_lr, ep, decay_at_epochs, factor, total_ep, lr_decay_mode):
+  """Multiplied by a factor at the BEGINNING of specified epochs. All 
+  parameters in the optimizer share the same learning rate.
+  
+  Args:
+    optimizer: a pytorch `Optimizer` object
+    base_lr: starting learning rate
+    ep: current epoch, ep >= 1
+    decay_at_epochs: a list or tuple; learning rate is multiplied by a factor 
+      at the BEGINNING of these epochs
+    factor: a number in range (0, 1)
+  
+  Example:
+    base_lr = 1e-3
+    decay_at_epochs = [51, 101]
+    factor = 0.1
+    It means the learning rate starts at 1e-3 and is multiplied by 0.1 at the 
+    BEGINNING of the 51'st epoch, and then further multiplied by 0.1 at the 
+    BEGINNING of the 101'st epoch, then stays unchanged till the end of 
+    training.
+  
+  NOTE: 
+    It is meant to be called at the BEGINNING of an epoch.
+  """
+  assert ep >= 1, "Current epoch number should be >= 1"
+
+  ind = find_index(decay_at_epochs, ep)
+  
+  ############# warm up #################
+  lr = optimizer.param_groups[0]['lr']
+  if ep < decay_at_epochs[0]:
+    alpha = ep / float(decay_at_epochs[0])
+    warmup_factor = 0.1 * (1 - alpha) + alpha
+    lr_new = base_lr * warmup_factor
+    update_learning_rate(optimizer, lr, lr_new)
+    lr = optimizer.param_groups[0]['lr']
+    assert lr == lr_new
+  elif ep == decay_at_epochs[0]:
+    update_learning_rate(optimizer, lr, base_lr)
+    lr = optimizer.param_groups[0]['lr']
+    assert lr == base_lr
+
+  cur_lr = optimizer.param_groups[0]['lr']
+  print('=====> current lr is: {:.10f}'.format(cur_lr))
+  
+  if lr_decay_mode == 'staircase_warm_up' and ep > decay_at_epochs[0]:
+    if ep in decay_at_epochs:
+      lr_new = base_lr * factor ** (ind)
+      update_learning_rate(optimizer, lr, lr_new)
+
+    cur_lr = optimizer.param_groups[0]['lr']
+    print('=====> staircase warm up: lr adjusted to {:.10f}'.format(cur_lr))
+  
+  if lr_decay_mode == 'exp_warm_up' and ep > decay_at_epochs[0]:
+    if ep < decay_at_epochs[1]:
+      return
+    lr_new = (base_lr * (0.001 ** (float(ep + 1 - decay_at_epochs[1])
+                                    / (total_ep + 1 - decay_at_epochs[1]))))
+    update_learning_rate(optimizer, lr, lr_new)
+
+    cur_lr = optimizer.param_groups[0]['lr']
+    print('=====> exp warm up: lr adjusted to {:.10f}'.format(cur_lr))
 
 
 @contextmanager

@@ -1,6 +1,7 @@
 import torch.nn as nn
 import math
 import torch.utils.model_zoo as model_zoo
+import torch
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152']
@@ -96,15 +97,14 @@ class ResNet(nn.Module):
   def __init__(self, block, layers):
     self.inplanes = 64
     super(ResNet, self).__init__()
-    self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
-                           bias=False)
+    self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
     self.bn1 = nn.BatchNorm2d(64)
     self.relu = nn.ReLU(inplace=True)
     self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
     self.layer1 = self._make_layer(block, 64, layers[0])
     self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
     self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-    self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+    self.layer4 = self._make_layer(block, 512, layers[3], stride=1)
 
     for m in self.modules():
       if isinstance(m, nn.Conv2d):
@@ -184,8 +184,13 @@ def resnet50(pretrained=False):
       pretrained (bool): If True, returns a model pre-trained on ImageNet
   """
   model = ResNet(Bottleneck, [3, 4, 6, 3])
+  print ("resnext model: ", model)
   if pretrained:
-    model.load_state_dict(remove_fc(model_zoo.load_url(model_urls['resnet50'])))
+    # checkpoint = torch.load('/home/qwe/AlignedReID/AlignedReID-Re-Production-Pytorch/model/resnet50-19c8e357.pth')
+    checkpoint = torch.load('/home/eric/Disk100G/githubProject/AlignedReID-Re-Production-Pytorch/model/resnet50-19c8e357.pth')
+    # print ("checkpoint: ", checkpoint)
+    model.load_state_dict(remove_fc(checkpoint))
+    # model.load_state_dict(remove_fc(model_zoo.load_url(model_urls['resnet50'])))
   return model
 
 

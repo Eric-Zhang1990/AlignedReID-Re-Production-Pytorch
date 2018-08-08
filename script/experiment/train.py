@@ -1,4 +1,7 @@
 """Train with optional Global Distance, Local Distance, Identification Loss."""
+#!/usr/bin/python
+# coding=utf-8
+
 from __future__ import print_function
 
 import sys
@@ -36,6 +39,7 @@ from aligned_reid.utils.utils import ReDirectSTD
 from aligned_reid.utils.utils import set_seed
 from aligned_reid.utils.utils import adjust_lr_exp
 from aligned_reid.utils.utils import adjust_lr_staircase
+from aligned_reid.utils.utils import adjust_lr_warm_up
 
 
 class Config(object):
@@ -44,43 +48,49 @@ class Config(object):
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--sys_device_ids', type=eval, default=(0,))
     parser.add_argument('-r', '--run', type=int, default=1)
-    parser.add_argument('--set_seed', type=str2bool, default=False)
-    parser.add_argument('--dataset', type=str, default='market1501',
+    parser.add_argument('--set_seed', type=str2bool, default=True)
+    parser.add_argument('--dataset', type=str, default='combined',
                         choices=['market1501', 'cuhk03', 'duke', 'combined'])
     parser.add_argument('--trainset_part', type=str, default='trainval',
                         choices=['trainval', 'train'])
 
     # Only for training set.
     parser.add_argument('--resize_h_w', type=eval, default=(256, 128))
-    parser.add_argument('--crop_prob', type=float, default=0)
-    parser.add_argument('--crop_ratio', type=float, default=1)
-    parser.add_argument('--ids_per_batch', type=int, default=32)
+    parser.add_argument('--crop_prob', type=float, default=0.3)
+    parser.add_argument('--crop_ratio', type=float, default=0.7)
+    parser.add_argument('--ids_per_batch', type=int, default=16)
     parser.add_argument('--ims_per_id', type=int, default=4)
 
     parser.add_argument('--log_to_file', type=str2bool, default=True)
-    parser.add_argument('--normalize_feature', type=str2bool, default=True)
+    parser.add_argument('--normalize_feature', type=str2bool, default=False)
     parser.add_argument('--local_dist_own_hard_sample',
-                        type=str2bool, default=False)
-    parser.add_argument('-gm', '--global_margin', type=float, default=0.3)
-    parser.add_argument('-lm', '--local_margin', type=float, default=0.3)
-    parser.add_argument('-glw', '--g_loss_weight', type=float, default=1.)
-    parser.add_argument('-llw', '--l_loss_weight', type=float, default=0.)
+                        type=str2bool, default=True)
+    parser.add_argument('-gm', '--global_margin', type=float, default=0.5)
+    parser.add_argument('-lm', '--local_margin', type=float, default=0.5)
+    parser.add_argument('-glw', '--g_loss_weight', type=float, default=0.7)
+    parser.add_argument('-llw', '--l_loss_weight', type=float, default=0.3)
     parser.add_argument('-idlw', '--id_loss_weight', type=float, default=0.)
 
     parser.add_argument('--only_test', type=str2bool, default=False)
     parser.add_argument('--resume', type=str2bool, default=False)
-    parser.add_argument('--exp_dir', type=str, default='')
+    
+
+    # parser.add_argument('--exp_dir', type=str, default='/home/qwe/AlignedReID/AlignedReID-Re-Production-Pytorch/model/train_conbined/20170727_s159')
+    parser.add_argument('--exp_dir', type=str, default='/home/eric/Disk100G/githubProject/AlignedReID-Re-Production-Pytorch/model/trainSet_conbined/Resnet-50/GL-0.7_LL-0.3_NNF_TWGD_EP-300_LDOHS-true_CP-0.3_CR-0.7_local_conv_out_channels_256_exp_warm_up')
+
     parser.add_argument('--model_weight_file', type=str, default='')
 
     parser.add_argument('--base_lr', type=float, default=2e-4)
-    parser.add_argument('--lr_decay_type', type=str, default='exp',
-                        choices=['exp', 'staircase'])
-    parser.add_argument('--exp_decay_at_epoch', type=int, default=76)
+    parser.add_argument('--lr_decay_type', type=str, default='exp_warm_up',
+                        choices=['exp', 'staircase', 'staircase_warm_up', 'exp_warm_up'])
+    parser.add_argument('--exp_decay_at_epoch', type=int, default=71)
+
+    ### if use "staircase_warm_up", just set "--staircase_decay_at_epochs" like (20, 60, 100,); if use "exp_warm_up", set "--staircase_decay_at_epochs" only 2 values, like(20, 70,)
     parser.add_argument('--staircase_decay_at_epochs',
-                        type=eval, default=(101, 201,))
+                        type=eval, default=(21, 71,))
     parser.add_argument('--staircase_decay_multiply_factor',
                         type=float, default=0.1)
-    parser.add_argument('--total_epochs', type=int, default=150)
+    parser.add_argument('--total_epochs', type=int, default=300)
 
     args = parser.parse_known_args()[0]
 
@@ -177,7 +187,7 @@ class Config(object):
 
     self.normalize_feature = args.normalize_feature
 
-    self.local_conv_out_channels = 128
+    self.local_conv_out_channels = 256
     self.global_margin = args.global_margin
     self.local_margin = args.local_margin
 
@@ -206,7 +216,8 @@ class Config(object):
 
     # How often (in batches) to log. If only need to log the average
     # information for each epoch, set this to a large value, e.g. 1e10.
-    self.log_steps = 1e10
+    # self.log_steps = 1e10
+    self.log_steps = 1000
 
     # Only test and without training.
     self.only_test = args.only_test
@@ -256,7 +267,9 @@ class Config(object):
       self.exp_dir, 'stderr_{}.txt'.format(time_str()))
 
     # Saving model weights and optimizer states, for resuming.
-    self.ckpt_file = osp.join(self.exp_dir, 'ckpt.pth')
+
+#    self.ckpt_file = osp.join(self.exp_dir, 'ckpt.pth')
+
     # Just for loading a pretrained model; no optimizer states is needed.
     self.model_weight_file = args.model_weight_file
 
@@ -278,6 +291,7 @@ class ExtractFeature(object):
     # dropout.
     self.model.eval()
     ims = Variable(self.TVT(torch.from_numpy(ims).float()))
+    ims.volatile = True
     global_feat, local_feat = self.model(ims)[:2]
     global_feat = global_feat.data.cpu().numpy()
     local_feat = local_feat.data.cpu().numpy()
@@ -355,8 +369,9 @@ def main():
   ################################
 
   if cfg.resume:
-    resume_ep, scores = load_ckpt(modules_optims, cfg.ckpt_file)
-
+    ckpt_file = '/home/eric/Disk100G/githubProject/AlignedReID-Re-Production-Pytorch/model/trainSet_conbined/Resnet-50/GL-0.7_LL-0.3_NNF_TWGD_EP-150_LDOHS-true_CP-0.3_CR-0.7_gm-lm-0.4_staircase_warm_up/resume_ckpt.pth'
+    resume_ep, scores = load_ckpt(modules_optims, ckpt_file)
+  
   # May Transfer Models and Optims to Specified Device. Transferring optimizer
   # is to cope with the case when you load the checkpoint to a new device.
   TMO(modules_optims)
@@ -373,7 +388,9 @@ def main():
         load_state_dict(model, sd)
         print('Loaded model weights from {}'.format(cfg.model_weight_file))
       else:
-        load_ckpt(modules_optims, cfg.ckpt_file)
+        # load_ckpt(modules_optims, cfg.ckpt_file)
+        ckpt_file = '/home/eric/Disk100G/githubProject/AlignedReID-Re-Production-Pytorch/model/trainSet_conbined/Resnet-50/GL-0.7_LL-0.3_NNF_TWGD_EP-150_LDOHS-true_CP-0.3_CR-0.7_gm-lm-0.4_staircase_warm_up/200_ckpt.pth'
+        load_ckpt(modules_optims, ckpt_file)
 
     use_local_distance = (cfg.l_loss_weight > 0) \
                          and cfg.local_dist_own_hard_sample
@@ -381,9 +398,13 @@ def main():
     for test_set, name in zip(test_sets, test_set_names):
       test_set.set_feat_func(ExtractFeature(model_w, TVT))
       print('\n=========> Test on dataset: {} <=========\n'.format(name))
+      # test_set.volatile = True
       test_set.eval(
         normalize_feat=cfg.normalize_feature,
-        use_local_distance=use_local_distance)
+        use_local_distance=False)
+      # test_set.eval(
+      #   normalize_feat=cfg.normalize_feature,
+      #   use_local_distance=use_local_distance)
 
   if cfg.only_test:
     test(load_model_weight=True)
@@ -392,10 +413,10 @@ def main():
   ############
   # Training #
   ############
-
+  step = 0
   start_ep = resume_ep if cfg.resume else 0
   for ep in range(start_ep, cfg.total_epochs):
-
+    step += 1
     # Adjust Learning Rate
     if cfg.lr_decay_type == 'exp':
       adjust_lr_exp(
@@ -404,13 +425,32 @@ def main():
         ep + 1,
         cfg.total_epochs,
         cfg.exp_decay_at_epoch)
-    else:
+    elif cfg.lr_decay_type == 'staircase':
       adjust_lr_staircase(
         optimizer,
         cfg.base_lr,
         ep + 1,
         cfg.staircase_decay_at_epochs,
         cfg.staircase_decay_multiply_factor)
+    elif cfg.lr_decay_type == 'staircase_warm_up':
+      adjust_lr_warm_up(
+        optimizer,
+        cfg.base_lr,
+        ep + 1,
+        cfg.staircase_decay_at_epochs,
+        cfg.staircase_decay_multiply_factor,
+        cfg.total_epochs,
+        cfg.lr_decay_type)
+    elif cfg.lr_decay_type == 'exp_warm_up':
+      adjust_lr_warm_up(
+        optimizer,
+        cfg.base_lr,
+        ep + 1,
+        cfg.staircase_decay_at_epochs,
+        cfg.staircase_decay_multiply_factor,
+        cfg.total_epochs,
+        cfg.lr_decay_type)
+
 
     may_set_mode(modules_optims, 'train')
 
@@ -431,11 +471,11 @@ def main():
     loss_meter = AverageMeter()
 
     ep_st = time.time()
-    step = 0
+    # step = 0
     epoch_done = False
     while not epoch_done:
 
-      step += 1
+      # step += 1
       step_st = time.time()
 
       ims, im_names, labels, mirrored, epoch_done = train_set.next_batch()
@@ -619,7 +659,15 @@ def main():
 
     # save ckpt
     if cfg.log_to_file:
-      save_ckpt(modules_optims, ep + 1, 0, cfg.ckpt_file)
+      # save_ckpt(modules_optims, ep + 1, 0, cfg.ckpt_file)
+      model_path = cfg.exp_dir
+      if (ep + 1) % 50 == 0:
+        model_name = str(ep) + '_ckpt.pth'
+        ckpt_file = model_path + '/' +  model_name
+        save_ckpt(modules_optims, ep, 0, ckpt_file)
+
+      final_model = model_path + '/' + 'final_ckpt.pth'
+      save_ckpt(modules_optims, ep, 0, final_model)
 
   ########
   # Test #

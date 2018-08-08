@@ -162,9 +162,9 @@ if __name__ == '__main__':
 
   parser = argparse.ArgumentParser(description="Transform Market1501 Dataset")
   parser.add_argument('--zip_file', type=str,
-                      default='~/Dataset/market1501/Market-1501-v15.09.15.zip')
+                      default='/home/eric/Disk100G/githubProject/AlignedReID-Re-Production-Pytorch/Dataset/Market-1501-v15.09.15.zip')
   parser.add_argument('--save_dir', type=str,
-                      default='~/Dataset/market1501')
+                      default='/home/eric/Disk100G/githubProject/AlignedReID-Re-Production-Pytorch/Dataset/market1501')
   args = parser.parse_args()
   zip_file = osp.abspath(osp.expanduser(args.zip_file))
   save_dir = osp.abspath(osp.expanduser(args.save_dir))

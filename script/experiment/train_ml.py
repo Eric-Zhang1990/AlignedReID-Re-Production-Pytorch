@@ -1,4 +1,4 @@
-"""Train with optional Global Distance, Local Distance, Identification Loss, 
+"""Train with optional Global Distance, Local Distance, Identification Loss,
 Mutual Loss."""
 from __future__ import print_function
 
@@ -21,6 +21,7 @@ import argparse
 
 from aligned_reid.dataset import create_dataset
 from aligned_reid.model.Model import Model
+from aligned_reid.model.Model_ml import Model_ml
 from aligned_reid.model.TripletLoss import TripletLoss
 from aligned_reid.model.loss import global_loss
 from aligned_reid.model.loss import local_loss
@@ -38,17 +39,18 @@ from aligned_reid.utils.utils import ReDirectSTD
 from aligned_reid.utils.utils import set_seed
 from aligned_reid.utils.utils import adjust_lr_exp
 from aligned_reid.utils.utils import adjust_lr_staircase
+from aligned_reid.utils.utils import adjust_lr_staircase_warmUp
 
 
 class Config(object):
   def __init__(self):
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--sys_device_ids', type=eval, default=((0,),))
-    parser.add_argument('--num_models', type=int, default=1)
+    parser.add_argument('-d', '--sys_device_ids', type=eval, default=((0,),(1,)))
+    parser.add_argument('--num_models', type=int, default=2)
     parser.add_argument('-r', '--run', type=int, default=1)
-    parser.add_argument('--set_seed', type=str2bool, default=False)
-    parser.add_argument('--dataset', type=str, default='market1501',
+    parser.add_argument('--set_seed', type=str2bool, default=True)
+    parser.add_argument('--dataset', type=str, default='combined',
                         choices=['market1501', 'cuhk03', 'duke', 'combined'])
     parser.add_argument('--trainset_part', type=str, default='trainval',
                         choices=['trainval', 'train'])
@@ -61,28 +63,28 @@ class Config(object):
     parser.add_argument('--ims_per_id', type=int, default=4)
 
     parser.add_argument('--log_to_file', type=str2bool, default=True)
-    parser.add_argument('--normalize_feature', type=str2bool, default=True)
+    parser.add_argument('--normalize_feature', type=str2bool, default=False)
     parser.add_argument('--local_dist_own_hard_sample',
-                        type=str2bool, default=False)
-    parser.add_argument('-gm', '--global_margin', type=float, default=0.3)
-    parser.add_argument('-lm', '--local_margin', type=float, default=0.3)
-    parser.add_argument('-glw', '--g_loss_weight', type=float, default=1.)
-    parser.add_argument('-llw', '--l_loss_weight', type=float, default=0.)
-    parser.add_argument('-idlw', '--id_loss_weight', type=float, default=0.)
-    parser.add_argument('-pmlw', '--pm_loss_weight', type=float, default=1.)
-    parser.add_argument('-gdmlw', '--gdm_loss_weight', type=float, default=1.)
-    parser.add_argument('-ldmlw', '--ldm_loss_weight', type=float, default=0.)
+                        type=str2bool, default=True)
+    parser.add_argument('-gm', '--global_margin', type=float, default=0.5)
+    parser.add_argument('-lm', '--local_margin', type=float, default=0.5)
+    parser.add_argument('-glw', '--g_loss_weight', type=float, default=0.7)
+    parser.add_argument('-llw', '--l_loss_weight', type=float, default=0.3)
+    parser.add_argument('-idlw', '--id_loss_weight', type=float, default=0)
+    parser.add_argument('-pmlw', '--pm_loss_weight', type=float, default=1.0)
+    parser.add_argument('-gdmlw', '--gdm_loss_weight', type=float, default=0.7)
+    parser.add_argument('-ldmlw', '--ldm_loss_weight', type=float, default=0.3)
 
     parser.add_argument('--only_test', type=str2bool, default=False)
     parser.add_argument('--resume', type=str2bool, default=False)
-    parser.add_argument('--exp_dir', type=str, default='')
+    parser.add_argument('--exp_dir', type=str, default='/home/qwe/AlignedReID/AlignedReID-Re-Production-Pytorch/mutual/diff_model/g_l_0806_resnet50_101')
 
     parser.add_argument('--base_lr', type=float, default=2e-4)
-    parser.add_argument('--lr_decay_type', type=str, default='exp',
-                        choices=['exp', 'staircase'])
-    parser.add_argument('--exp_decay_at_epoch', type=int, default=76)
+    parser.add_argument('--lr_decay_type', type=str, default='staircase_warm_up',
+                        choices=['exp', 'staircase', 'staircase_warm_up'])
+    parser.add_argument('--exp_decay_at_epoch', type=int, default=71)
     parser.add_argument('--staircase_decay_at_epochs',
-                        type=eval, default=(101, 201,))
+                        type=eval, default=(20, 60, 100,))
     parser.add_argument('--staircase_decay_multiply_factor',
                         type=float, default=0.1)
     parser.add_argument('--total_epochs', type=int, default=150)
@@ -353,9 +355,18 @@ def main():
   # Models  #
   ###########
 
-  models = [Model(local_conv_out_channels=cfg.local_conv_out_channels,
-                  num_classes=len(train_set.ids2labels))
-            for _ in range(cfg.num_models)]
+  # models = [Model(local_conv_out_channels=cfg.local_conv_out_channels,
+  #                 num_classes=len(train_set.ids2labels))
+  #           for _ in range(cfg.num_models)]
+
+  model1 = Model_ml(local_conv_out_channels=cfg.local_conv_out_channels,
+                  num_classes=len(train_set.ids2labels), isResnet50=True)
+
+  model2 = Model_ml(local_conv_out_channels=cfg.local_conv_out_channels,
+                 num_classes=len(train_set.ids2labels), isResnet50=False)
+
+  models = [model1, model2]
+
   # Model wrappers
   model_ws = [DataParallel(models[i], device_ids=relative_device_ids[i])
               for i in range(cfg.num_models)]
@@ -374,6 +385,9 @@ def main():
                 for m in models]
 
   # Bind them together just to save some codes in the following usage.
+  modules_optim1 = [models[0], optimizers[0]]
+  modules_optim2 = [models[1], optimizers[1]]
+
   modules_optims = models + optimizers
 
   ################################
@@ -407,7 +421,7 @@ def main():
               .format(i + 1, name))
         test_set.eval(
           normalize_feat=cfg.normalize_feature,
-          use_local_distance=use_local_distance)
+          use_local_distance=False)
 
   if cfg.only_test:
     test(load_model_weight=True)
@@ -515,6 +529,7 @@ def main():
           if j != i:
             pm_loss += F.kl_div(log_probs, TVT(probs_list[j]).detach(), False)
         pm_loss /= 1. * (cfg.num_models - 1) * len(ims)
+
 
       # Global Distance Mutual Loss (L2 Loss)
       gdm_loss = 0
@@ -627,8 +642,15 @@ def main():
           ep + 1,
           cfg.total_epochs,
           cfg.exp_decay_at_epoch)
-      else:
+      elif cfg.lr_decay_type == 'staircase':
         adjust_lr_staircase(
+          optimizer,
+          cfg.base_lr,
+          ep + 1,
+          cfg.staircase_decay_at_epochs,
+          cfg.staircase_decay_multiply_factor)
+      else:
+        adjust_lr_staircase_warmUp(
           optimizer,
           cfg.base_lr,
           ep + 1,
@@ -837,6 +859,12 @@ def main():
 
     # save ckpt
     if cfg.log_to_file:
+      if (ep + 1) % 50 == 0:
+        [filepath,filename] = osp.split(cfg.ckpt_file)
+        ckpt1 = filepath + '/'+ str(ep+1) +'_M1_'+filename
+        ckpt2 = filepath + '/'+ str(ep+1) +'_M2_'+filename
+        save_ckpt(modules_optim1, ep + 1, 0, ckpt1)
+        save_ckpt(modules_optim2, ep + 1, 0, ckpt2)
       save_ckpt(modules_optims, ep + 1, 0, cfg.ckpt_file)
 
   ########

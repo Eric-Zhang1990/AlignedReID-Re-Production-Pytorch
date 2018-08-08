@@ -22,25 +22,27 @@ def create_dataset(
   ########################################
   # Specify Directory and Partition File #
   ########################################
+  # dataset = '/home/qwe/AlignedReID/AlignedReID-Re-Production-Pytorch/Dataset'
+  dataset = '/home/eric/Disk100G/githubProject/AlignedReID-Re-Production-Pytorch/Dataset'
 
   if name == 'market1501':
-    im_dir = ospeu('~/Dataset/market1501/images')
-    partition_file = ospeu('~/Dataset/market1501/partitions.pkl')
+    im_dir = ospeu(dataset + '/' + 'market1501/images')
+    partition_file = ospeu(dataset + '/' + 'market1501/partitions.pkl')
 
   elif name == 'cuhk03':
     im_type = ['detected', 'labeled'][0]
-    im_dir = ospeu(ospj('~/Dataset/cuhk03', im_type, 'images'))
-    partition_file = ospeu(ospj('~/Dataset/cuhk03', im_type, 'partitions.pkl'))
+    im_dir = ospeu(ospj(dataset + '/' + 'cuhk03', im_type, 'images'))
+    partition_file = ospeu(ospj(dataset + '/' + 'cuhk03', im_type, 'partitions.pkl'))
 
   elif name == 'duke':
-    im_dir = ospeu('~/Dataset/duke/images')
-    partition_file = ospeu('~/Dataset/duke/partitions.pkl')
+    im_dir = ospeu(dataset + '/' + 'duke/images')
+    partition_file = ospeu(dataset + '/' + 'duke/partitions.pkl')
 
   elif name == 'combined':
     assert part in ['trainval'], \
       "Only trainval part of the combined dataset is available now."
-    im_dir = ospeu('~/Dataset/market1501_cuhk03_duke/trainval_images')
-    partition_file = ospeu('~/Dataset/market1501_cuhk03_duke/partitions.pkl')
+    im_dir = ospeu(dataset + '/' + 'market1501_cuhk03_duke/trainval_images')
+    partition_file = ospeu(dataset + '/' + 'market1501_cuhk03_duke/partitions.pkl')
 
   ##################
   # Create Dataset #

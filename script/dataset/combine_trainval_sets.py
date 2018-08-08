@@ -83,12 +83,12 @@ if __name__ == '__main__':
   parser.add_argument(
     '--market1501_im_dir',
     type=str,
-    default=ospeu('~/Dataset/market1501/images')
+    default=ospeu('/home/eric/Disk100G/githubProject/AlignedReID-Re-Production-Pytorch/Dataset/market1501/images')
   )
   parser.add_argument(
     '--market1501_partition_file',
     type=str,
-    default=ospeu('~/Dataset/market1501/partitions.pkl')
+    default=ospeu('/home/eric/Disk100G/githubProject/AlignedReID-Re-Production-Pytorch/Dataset/market1501/partitions.pkl')
   )
 
   cuhk03_im_type = ['detected', 'labeled'][0]
@@ -96,29 +96,29 @@ if __name__ == '__main__':
     '--cuhk03_im_dir',
     type=str,
     # Remember to select the detected or labeled set.
-    default=ospeu('~/Dataset/cuhk03/{}/images'.format(cuhk03_im_type))
+    default=ospeu('/home/eric/Disk100G/githubProject/AlignedReID-Re-Production-Pytorch/Dataset/cuhk03/{}/images'.format(cuhk03_im_type))
   )
   parser.add_argument(
     '--cuhk03_partition_file',
     type=str,
     # Remember to select the detected or labeled set.
-    default=ospeu('~/Dataset/cuhk03/{}/partitions.pkl'.format(cuhk03_im_type))
+    default=ospeu('/home/eric/Disk100G/githubProject/AlignedReID-Re-Production-Pytorch/Dataset/cuhk03/{}/partitions.pkl'.format(cuhk03_im_type))
   )
 
   parser.add_argument(
     '--duke_im_dir',
     type=str,
-    default=ospeu('~/Dataset/duke/images'))
+    default=ospeu('/home/eric/Disk100G/githubProject/AlignedReID-Re-Production-Pytorch/Dataset/duke/images'))
   parser.add_argument(
     '--duke_partition_file',
     type=str,
-    default=ospeu('~/Dataset/duke/partitions.pkl')
+    default=ospeu('/home/eric/Disk100G/githubProject/AlignedReID-Re-Production-Pytorch/Dataset/duke/partitions.pkl')
   )
 
   parser.add_argument(
     '--save_dir',
     type=str,
-    default=ospeu('~/Dataset/market1501_cuhk03_duke')
+    default=ospeu('/home/eric/Disk100G/githubProject/AlignedReID-Re-Production-Pytorch/Dataset/market1501_cuhk03_duke')
   )
 
   args = parser.parse_args()

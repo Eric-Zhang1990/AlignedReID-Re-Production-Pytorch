@@ -4,12 +4,22 @@ import torch.nn.init as init
 import torch.nn.functional as F
 
 from .resnet import resnet50
+from .ResneXt import resnext50_32x4d
+
+from .ResneXt_2 import resnext50
+from .resnext_50_32x4d import resnext_50_32x4d
+from .resnext_50_32x4d_1 import resnext_50_32x4d_1
 
 
 class Model(nn.Module):
   def __init__(self, local_conv_out_channels=128, num_classes=None):
     super(Model, self).__init__()
     self.base = resnet50(pretrained=True)
+    # self.base = resnext50_32x4d(pretrained=True)
+    # self.base = resnext50(pretrained=True)
+    # self.base = resnext_50_32x4d(pretrained=True)
+    # self.base = resnext_50_32x4d_1(pretrained=True)
+
     planes = 2048
     self.local_conv = nn.Conv2d(planes, local_conv_out_channels, 1)
     self.local_bn = nn.BatchNorm2d(local_conv_out_channels)

@@ -1,0 +1,77 @@
+    parser.add_argument('--base_lr', type=float, default=1e-3)
+    parser.add_argument('--lr_decay_type', type=str, default='staircase_warm_up',
+                        choices=['exp', 'staircase', 'staircase_warm_up'])
+    parser.add_argument('--exp_decay_at_epoch', type=int, default=70)
+    parser.add_argument('--staircase_decay_at_epochs',
+                        type=eval, default=(20, 80, 150,))
+    parser.add_argument('--staircase_decay_multiply_factor',
+                        type=float, default=0.1)
+    parser.add_argument('--total_epochs', type=int, default=300)
+
+
+
+    elif cfg.lr_decay_type == 'staircase':
+      adjust_lr_staircase(
+        optimizer,
+        cfg.base_lr,
+        ep + 1,
+        cfg.staircase_decay_at_epochs,
+        cfg.staircase_decay_multiply_factor)
+    else:
+      adjust_lr_staircase_warmUp(
+        optimizer,
+        cfg.base_lr,
+        ep + 1,
+        cfg.staircase_decay_at_epochs,
+        cfg.staircase_decay_multiply_factor,
+        step)
+
+
+def adjust_lr_staircase_warmUp(optimizer, base_lr, ep, decay_at_epochs, factor, step):
+  """Multiplied by a factor at the BEGINNING of specified epochs. All 
+  parameters in the optimizer share the same learning rate.
+  
+  Args:
+    optimizer: a pytorch `Optimizer` object
+    base_lr: starting learning rate
+    ep: current epoch, ep >= 1
+    decay_at_epochs: a list or tuple; learning rate is multiplied by a factor 
+      at the BEGINNING of these epochs
+    factor: a number in range (0, 1)
+  
+  Example:
+    base_lr = 1e-3
+    decay_at_epochs = [51, 101]
+    factor = 0.1
+    It means the learning rate starts at 1e-3 and is multiplied by 0.1 at the 
+    BEGINNING of the 51'st epoch, and then further multiplied by 0.1 at the 
+    BEGINNING of the 101'st epoch, then stays unchanged till the end of 
+    training.
+  
+  NOTE: 
+    It is meant to be called at the BEGINNING of an epoch.
+  """
+  assert ep >= 1, "Current epoch number should be >= 1"
+
+  ind = find_index(decay_at_epochs, ep)
+  
+  ############# warm up #################
+  lr = optimizer.param_groups[0]['lr']
+  if ep < decay_at_epochs[0]:
+    alpha = ep / float(decay_at_epochs[0])
+    warmup_factor = 0.1 * (1 - alpha) + alpha
+    lr_new = base_lr * warmup_factor
+    update_learning_rate(optimizer, lr, lr_new)
+    lr = optimizer.param_groups[0]['lr']
+    assert lr == lr_new
+  elif ep == decay_at_epochs[0]:
+    update_learning_rate(optimizer, lr, base_lr)
+    lr = optimizer.param_groups[0]['lr']
+    assert lr == base_lr
+  
+  if ep in decay_at_epochs:
+    lr_new = lr * factor ** (ind + 1)
+    update_learning_rate(optimizer, lr, lr_new)
+  
+  cur_lr = optimizer.param_groups[0]['lr']
+  print('=====> warm up: lr adjusted to {:.10f}'.format(cur_lr))
